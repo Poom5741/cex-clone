@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { testConnection } from '@/lib/pocketbase';
 
 interface StatusBarProps {
   market: string;
@@ -12,13 +13,8 @@ export default function StatusBar({ market }: StatusBarProps) {
   useEffect(() => {
     const checkConnection = async () => {
       setDbStatus('connecting');
-      try {
-        const response = await fetch('/api/health');
-        const { connected } = await response.json();
-        setDbStatus(connected ? 'connected' : 'disconnected');
-      } catch {
-        setDbStatus('disconnected');
-      }
+      const connected = await testConnection();
+      setDbStatus(connected ? 'connected' : 'disconnected');
     };
 
     checkConnection();

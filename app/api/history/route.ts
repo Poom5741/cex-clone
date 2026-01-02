@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCandles } from '@/lib/db';
+import { getCandles } from '@/lib/pocketbase';
 import type { HistoryQuery } from '@/lib/types';
 
 export async function GET(request: NextRequest) {
