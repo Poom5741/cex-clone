@@ -1,5 +1,5 @@
 import PocketBase from 'pocketbase';
-import type { ChartCandle, Candle, Resolution } from './types';
+import type { ChartCandle, Candle, Resolution, Trade } from './types';
 
 const pb = new PocketBase(
   process.env.POCKETBASE_URL || 'http://localhost:8090'
