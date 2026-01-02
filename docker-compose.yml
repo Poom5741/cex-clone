@@ -1,35 +1,19 @@
 version: '3.8'
 
 services:
-  timescaledb:
-    image: timescale/timescaledb:latest-pg15
-    container_name: trading_timescaledb
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    container_name: trading_pocketbase
     ports:
-      - "${TIMESCALEDB_PORT}:5432"
+      - "8090:8090"
     volumes:
-      - timescaledb_data:/home/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - pocketbase_data:/pb_data
+      - ./pocketbase:/pb_hooks
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8090/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: trading_pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@trading.local
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
-    ports:
-      - "${PGADMIN_PORT}:80"
-    depends_on:
-      - timescaledb
-
 volumes:
-  timescaledb_data:
+  pocketbase_data:
