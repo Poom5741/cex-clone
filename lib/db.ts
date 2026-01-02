@@ -100,7 +100,13 @@ export async function getCandles(
 export async function refreshCandles(): Promise<void> {
   const client = await getConnection();
   try {
-    await client.query('REFRESH MATERIALIZED VIEW CONCURRENTLY candles_1m');
+    // Try CONCURRENTLY first (for production use), fall back to normal refresh
+    try {
+      await client.query('REFRESH MATERIALIZED VIEW CONCURRENTLY candles_1m');
+    } catch {
+      // If view is empty, use regular refresh
+      await client.query('REFRESH MATERIALIZED VIEW candles_1m');
+    }
   } finally {
     client.release();
   }
