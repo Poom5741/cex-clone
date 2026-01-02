@@ -8,13 +8,6 @@ const pb = new PocketBase(
 // Export for use in other modules
 export { pb };
 
-// Helper: Floor timestamp to minute
-function floorToMinute(date: Date): Date {
-  const d = new Date(date);
-  d.setSeconds(0, 0);
-  return d;
-}
-
 // Helper: Floor timestamp to resolution
 function floorToResolution(date: Date, resolution: Resolution): Date {
   const d = new Date(date);
