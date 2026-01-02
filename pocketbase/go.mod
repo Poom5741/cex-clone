@@ -1,6 +1,6 @@
 module github.com/poom-work/tokenine/pocketbase
 
-go 1.25.5
+go 1.25
 
 require (
 	github.com/pocketbase/dbx v1.11.0
