@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { testConnection } from '@/lib/db';
 
 interface StatusBarProps {
   market: string;
@@ -13,8 +12,13 @@ export default function StatusBar({ market }: StatusBarProps) {
   useEffect(() => {
     const checkConnection = async () => {
       setDbStatus('connecting');
-      const connected = await testConnection();
-      setDbStatus(connected ? 'connected' : 'disconnected');
+      try {
+        const response = await fetch('/api/health');
+        const { connected } = await response.json();
+        setDbStatus(connected ? 'connected' : 'disconnected');
+      } catch {
+        setDbStatus('disconnected');
+      }
     };
 
     checkConnection();

@@ -109,7 +109,13 @@ export default function Chart({ symbol, resolution }: ChartProps) {
 
         const data: Candle[] = await response.json();
 
-        seriesRef.current.setData(data);
+        // Cast data to proper format for lightweight-charts
+        const chartData = data.map(candle => ({
+          ...candle,
+          time: candle.time as Time,
+        }));
+
+        seriesRef.current.setData(chartData);
         chartRef.current?.timeScale().fitContent();
       } catch (error) {
         console.error('Error loading chart data:', error);
