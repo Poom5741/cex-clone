@@ -1,16 +1,25 @@
-export interface Trade {
-  id: number;
+// PocketBase record types
+export interface PocketBaseRecord {
+  id: string;
+  collectionId: string;
+  collectionName: string;
+  created: string;
+  updated: string;
+}
+
+export interface Trade extends PocketBaseRecord {
   market: string;
-  price: string;
-  size: string;
+  price: number;
+  size: number;
   side: 'buy' | 'sell';
-  timestamp: Date;
+  timestamp: string;
   tx_hash?: string;
   log_index?: number;
 }
 
-export interface Candle {
-  time: number; // Unix timestamp in seconds
+export interface Candle extends PocketBaseRecord {
+  time: string;
+  market: string;
   open: number;
   high: number;
   low: number;
@@ -18,14 +27,14 @@ export interface Candle {
   volume: number;
 }
 
-export interface CandleRow {
-  time: Date;
-  market: string;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
+// Chart formats (TradingView Lightweight Charts expects)
+export interface ChartCandle {
+  time: number; // Unix timestamp in seconds
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
 }
 
 export type Resolution = '1' | '5' | '15' | '60' | '240' | 'D';
@@ -35,4 +44,12 @@ export interface HistoryQuery {
   resolution: Resolution;
   from: number; // Unix timestamp
   to: number; // Unix timestamp
+}
+
+// PocketBase list response
+export interface PocketBaseList<T> {
+  page: number;
+  perPage: number;
+  totalItems: number;
+  items: T[];
 }
