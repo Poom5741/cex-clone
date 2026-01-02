@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, ColorType, Time } from 'lightweight-charts';
+import PocketBase from 'pocketbase';
 import type { Candle, Resolution } from '@/lib/types';
 
 interface ChartProps {
@@ -13,7 +14,9 @@ export default function Chart({ symbol, resolution }: ChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const pbRef = useRef<PocketBase | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [realtimeStatus, setRealtimeStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
 
   // Initialize chart
   useEffect(() => {
@@ -126,6 +129,51 @@ export default function Chart({ symbol, resolution }: ChartProps) {
 
     loadData();
   }, [symbol, resolution]);
+
+  // PocketBase realtime subscription for live candle updates
+  useEffect(() => {
+    const market = symbol.replace('/', '');
+    setRealtimeStatus('connecting');
+
+    try {
+      // Create new PB instance
+      const pb = new PocketBase(process.env.NEXT_PUBLIC_POCKETBASE_URL || 'http://localhost:8090');
+      pbRef.current = pb;
+
+      // Subscribe to candle updates
+      const unsubscribe = pb.collection('candles_1m').subscribe('*', (e) => {
+        const record = e.record as Candle;
+
+        // Null check
+        if (!record || record.market !== market) return;
+
+        // Update the chart with new candle data
+        seriesRef.current?.update({
+          time: Math.floor(new Date(record.time).getTime() / 1000) as Time,
+          open: record.open,
+          high: record.high,
+          low: record.low,
+          close: record.close,
+        });
+
+        setRealtimeStatus('connected');
+      });
+
+      setRealtimeStatus('connected');
+
+      // Cleanup
+      return () => {
+        unsubscribe.then(fn => fn()).catch(err => {
+          console.error('Unsubscribe error:', err);
+        });
+        pbRef.current = null;
+        setRealtimeStatus('disconnected');
+      };
+    } catch (error) {
+      console.error('Realtime subscription error:', error);
+      setRealtimeStatus('disconnected');
+    }
+  }, [symbol]);
 
   return (
     <div className="relative w-full h-[85vh]">
