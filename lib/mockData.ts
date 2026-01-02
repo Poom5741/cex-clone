@@ -1,4 +1,4 @@
-import { insertTrade } from './pocketbase';
+import { insertTrade, insertTrades } from './pocketbase';
 import type { Trade } from './types';
 
 interface MarketConfig {
