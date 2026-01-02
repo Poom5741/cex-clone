@@ -3,15 +3,15 @@ import { generateInitialCandles, startMockTrades } from '../lib/mockData';
 async function main() {
   console.log('Seeding database with initial data...');
 
-  // Generate 7 days of candles for each market
+  // Generate 1 day of candles for each market (reduced from 7 for speed)
   const markets = ['ETHUSDC', 'BTCUSDC', 'SOLUSDC'];
 
   for (const market of markets) {
-    console.log(`Generating data for ${market}...`);
-    await generateInitialCandles(market, 7);
+    console.log(`\nGenerating data for ${market}...`);
+    await generateInitialCandles(market, 1);
   }
 
-  console.log('Seed complete!');
+  console.log('\nSeed complete!');
   console.log('Starting mock trades...');
 
   // Start generating live trades

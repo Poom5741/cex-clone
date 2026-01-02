@@ -1,4 +1,4 @@
-import { insertTrade, refreshCandles } from './db';
+import { insertTrade, insertTrades, refreshCandles } from './db';
 import type { Trade } from './types';
 
 interface MarketConfig {
@@ -93,9 +93,9 @@ export function stopMockTrades(): void {
 
 export async function generateInitialCandles(
   market: string = 'ETHUSDC',
-  days: number = 7
+  days: number = 1
 ): Promise<void> {
-  console.log(`Generating ${days} days of initial candles for ${market}...`);
+  console.log(`Generating ${days} day(s) of initial candles for ${market}...`);
 
   initializePrices();
   const config = MARKETS[market];
@@ -107,24 +107,42 @@ export async function generateInitialCandles(
   const now = Date.now();
   const startTime = now - days * 24 * 60 * 60 * 1000;
 
+  const BATCH_SIZE = 1000;
+  const batch: Omit<Trade, 'id'>[] = [];
+  let totalTrades = 0;
+
   for (let t = startTime; t < now; t += 60000) {
-    // Generate 5-20 trades per minute
-    const tradesPerMinute = Math.floor(Math.random() * 15) + 5;
+    // Generate 2-5 trades per minute (reduced from 5-20 for speed)
+    const tradesPerMinute = Math.floor(Math.random() * 3) + 2;
 
     for (let i = 0; i < tradesPerMinute; i++) {
       const change = (Math.random() - 0.5) * 2 * config.volatility * currentPrices[market];
       currentPrices[market] += change;
 
-      await insertTrade({
+      batch.push({
         market,
         price: currentPrices[market].toFixed(2),
         size: (Math.random() * 2 + 0.01).toFixed(4),
         side: Math.random() > 0.5 ? 'buy' : 'sell',
         timestamp: new Date(t + Math.random() * 60000),
       });
+
+      totalTrades++;
+
+      // Batch insert when we reach BATCH_SIZE
+      if (batch.length >= BATCH_SIZE) {
+        await insertTrades(batch);
+        batch.length = 0;
+        process.stdout.write(`\rGenerated ${totalTrades} trades...`);
+      }
     }
   }
 
+  // Insert remaining trades
+  if (batch.length > 0) {
+    await insertTrades(batch);
+  }
+
   await refreshCandles();
-  console.log('Initial candles generated');
+  console.log(`\nGenerated ${totalTrades} trades for ${market}`);
 }

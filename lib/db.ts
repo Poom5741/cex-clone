@@ -26,6 +26,36 @@ export async function insertTrade(trade: Omit<Trade, 'id'>): Promise<void> {
   }
 }
 
+export async function insertTrades(trades: Omit<Trade, 'id'>[]): Promise<void> {
+  if (trades.length === 0) return;
+
+  const client = await getConnection();
+  try {
+    const values = trades.map((trade, i) => {
+      const offset = i * 7;
+      return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`;
+    }).join(', ');
+
+    const flatValues = trades.flatMap(trade => [
+      trade.market,
+      trade.price,
+      trade.size,
+      trade.side,
+      trade.timestamp,
+      trade.tx_hash || null,
+      trade.log_index || null,
+    ]);
+
+    await client.query(
+      `INSERT INTO trades (market, price, size, side, timestamp, tx_hash, log_index)
+       VALUES ${values}`,
+      flatValues
+    );
+  } finally {
+    client.release();
+  }
+}
+
 export async function getCandles(
   market: string,
   from: Date,
