@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticateAsAdmin, getCandles } from '@/lib/pocketbase';
-import type { HistoryQuery, Resolution } from '@/lib/types';
+import { authenticateAsAdmin, getCandles1m } from '@/lib/pocketbase';
+import type { Resolution } from '@/lib/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,14 +35,28 @@ export async function GET(request: NextRequest) {
     // Normalize symbol format (ETH/USDC -> ETHUSDC for DB)
     const market = symbol.replace('/', '');
 
+    // Always fetch 1m candles (single source of truth)
+    // Frontend will aggregate to requested timeframe
     console.log(`[DEBUG] Query: market=${market}, from=${fromDate.toISOString()}, to=${toDate.toISOString()}, resolution=${resolution}, direction=${direction}, limit=${limit}`);
     console.log(`[DEBUG] Raw params - symbol=${symbol}, from=${from}, to=${to}`);
 
-    const candles = await getCandles(market, fromDate, toDate, resolution, direction, limit);
+    const candles = await getCandles1m(market, fromDate, toDate, direction, limit);
 
-    console.log(`[DEBUG] Result: ${candles.length} candles`);
+    console.log(`[DEBUG] Result: ${candles.length} 1m candles`);
 
-    return NextResponse.json(candles);
+    // Return 1m candles with metadata about requested resolution for frontend aggregation
+    return NextResponse.json({
+      resolution,
+      candles: candles.map(c => ({
+        time: c.time,
+        market: c.market,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume,
+      })),
+    });
   } catch (error) {
     console.error('History API error:', error);
     return NextResponse.json(
