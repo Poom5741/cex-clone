@@ -97,6 +97,7 @@ export async function insertTrades(trades: Omit<Trade, 'id' | 'collectionId' | '
 }
 
 // Get 1-minute candles for a market and time range
+// Uses safe pagination to fetch data in chunks, avoiding truncation issues
 export async function getCandles1m(
   market: string,
   from: Date,
@@ -112,16 +113,65 @@ export async function getCandles1m(
 
   // Determine sort order based on direction
   const sortOrder = direction === 'backward' ? '-time' : '+time';
-  
-  // Use getFullList to ensure we get ALL data in the range
-  // getList with a large page size (e.g. 43200) often gets truncated by the server/proxy defaults
-  const result = await pb.collection('candles_1m').getFullList({
-    filter: filter,
-    sort: sortOrder,
-  });
 
-  console.log(`[DEBUG getCandles1m] returned: ${result.length} (filtered)`);
-  return result as Candle[];
+  // Safe pagination: fetch in chunks to avoid truncation
+  const PAGE_SIZE = 500;  // Small enough to avoid server/proxy limits
+  const MAX_PAGES = 1000; // Safety limit: 500K candles max
+  let page = 1;
+  let allCandles: Candle[] = [];
+  let totalAvailable = 0;
+
+  while (page <= MAX_PAGES) {
+    const result = await pb.collection('candles_1m').getList(page, PAGE_SIZE, {
+      filter: filter,
+      sort: sortOrder,
+    });
+
+    // Store total items available (from first page)
+    if (page === 1) {
+      totalAvailable = result.totalItems;
+      console.log(`[DEBUG Pagination] Total available: ${totalAvailable} candles`);
+    }
+
+    // Safety check: no items returned = no more data
+    if (result.items.length === 0) {
+      console.log(`[DEBUG Pagination] Page ${page}: No items, stopping`);
+      break;
+    }
+
+    // Add items to our collection
+    allCandles.push(...(result.items as Candle[]));
+    console.log(`[DEBUG Pagination] Page ${page}: Fetched ${result.items.length}, Total: ${allCandles.length}/${totalAvailable}`);
+
+    // Safety check: limit parameter (if provided)
+    if (limit !== undefined && allCandles.length >= limit) {
+      allCandles = allCandles.slice(0, limit);
+      console.log(`[DEBUG Pagination] Reached limit of ${limit}, stopping`);
+      break;
+    }
+
+    // Safety check: got less than full page = reached end
+    if (result.items.length < PAGE_SIZE) {
+      console.log(`[DEBUG Pagination] Page ${page} partial (${result.items.length}/${PAGE_SIZE}), reached end`);
+      break;
+    }
+
+    // Safety check: fetched all available items
+    if (allCandles.length >= totalAvailable) {
+      console.log(`[DEBUG Pagination] Fetched all ${totalAvailable} available candles`);
+      break;
+    }
+
+    page++;
+  }
+
+  // Final validation
+  if (allCandles.length < totalAvailable) {
+    console.warn(`[DEBUG Pagination] Warning: Fetched ${allCandles.length} of ${totalAvailable} available candles (may have hit MAX_PAGES limit)`);
+  }
+
+  console.log(`[DEBUG getCandles1m] returned: ${allCandles.length} candles`);
+  return allCandles;
 }
 
 // Aggregate candles from 1m to higher timeframe
