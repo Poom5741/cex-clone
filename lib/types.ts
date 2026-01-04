@@ -29,7 +29,7 @@ export interface Candle extends PocketBaseRecord {
 
 // Chart formats (TradingView Lightweight Charts expects)
 export interface ChartCandle {
-  time: number; // Unix timestamp in seconds
+  time: number; // Unix timestamp in seconds (UTCTimestamp for Lightweight Charts)
   open: number;
   high: number;
   low: number;

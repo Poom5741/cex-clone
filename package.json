@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
+    "seed-fast": "tsx scripts/seed-fast.ts",
     "mock-trades": "tsx scripts/mock-trades.ts"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.16",
+    "better-sqlite3": "^12.5.0",
     "eslint": "^8",
     "eslint-config-next": "^15.1.6",
     "postcss": "^8",
