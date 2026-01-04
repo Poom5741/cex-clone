@@ -23,11 +23,11 @@ func main() {
 			log.Printf("Migration error: %v", err)
 		}
 
+		// Register hooks AFTER migrations create collections
+		hooks.RegisterCandleAggregationHook(app)
+
 		return nil
 	})
-
-	// Register hooks
-	hooks.RegisterCandleAggregationHook(app)
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

@@ -5,6 +5,26 @@ const pb = new PocketBase(
   process.env.POCKETBASE_URL || 'http://localhost:8090'
 );
 
+// Authenticate as admin for server-side operations (seed script, API routes)
+export async function authenticateAsAdmin(): Promise<boolean> {
+  const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL;
+  const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD;
+
+  if (!adminEmail || !adminPassword) {
+    console.warn('POCKETBASE_ADMIN_EMAIL or POCKETBASE_ADMIN_PASSWORD not set');
+    return false;
+  }
+
+  try {
+    await pb.collection('_superusers').authWithPassword(adminEmail, adminPassword);
+    console.log('✅ Authenticated as PocketBase admin');
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to authenticate as PocketBase admin:', error);
+    return false;
+  }
+}
+
 // Export for use in other modules
 export { pb };
 
@@ -47,13 +67,23 @@ export async function insertTrades(trades: Omit<Trade, 'id' | 'collectionId' | '
 export async function getCandles1m(
   market: string,
   from: Date,
-  to: Date
+  to: Date,
+  direction: 'forward' | 'backward' = 'forward',
+  limit?: number
 ): Promise<Candle[]> {
-  const result = await pb.collection('candles_1m').getList(1, 10000, {
-    filter: `market = "${market}" && time >= "${from.toISOString()}" && time <= "${to.toISOString()}"`,
-    sort: '+time',
+  const filter = `market = "${market}" && time >= "${from.toISOString()}" && time <= "${to.toISOString()}"`;
+  console.log(`[DEBUG getCandles1m] filter: ${filter}, direction: ${direction}, limit: ${limit}`);
+
+  // Determine sort order based on direction
+  const sortOrder = direction === 'backward' ? '-time' : '+time';
+  const perPage = limit || 10000;
+
+  const result = await pb.collection('candles_1m').getList(1, perPage, {
+    filter: filter,
+    sort: sortOrder,
   });
 
+  console.log(`[DEBUG getCandles1m] returned: ${result.items.length} (filtered), total: ${result.totalItems}`);
   return result.items as Candle[];
 }
 
@@ -62,28 +92,61 @@ export async function getCandles(
   market: string,
   from: Date,
   to: Date,
-  resolution: Resolution = '1'
+  resolution: Resolution = '1',
+  direction: 'forward' | 'backward' = 'forward',
+  limit?: number
 ): Promise<ChartCandle[]> {
   // Expand time range for aggregation
   const expandedFrom = new Date(from);
+  const expandedTo = new Date(to);
+
   if (resolution !== '1') {
-    // Add buffer for aggregation
-    expandedFrom.setHours(expandedFrom.getHours() - 24);
+    // Add buffer for aggregation (1 resolution before and after)
+    let resolutionMs: number;
+    if (resolution === 'D') {
+      resolutionMs = 24 * 60 * 60 * 1000; // 1 day in ms
+    } else {
+      resolutionMs = parseInt(resolution) * 60 * 1000;
+    }
+    expandedFrom.setTime(expandedFrom.getTime() - resolutionMs);
+    expandedTo.setTime(expandedTo.getTime() + resolutionMs);
   }
 
   // Get 1m candles
-  const candles1m = await getCandles1m(market, expandedFrom, to);
+  const candles1m = await getCandles1m(market, expandedFrom, expandedTo, direction, limit);
 
-  // If 1m resolution, return directly
+  // If 1m resolution, aggregate duplicates first (handle hook not working properly)
   if (resolution === '1') {
-    return candles1m.map(c => ({
-      time: Math.floor(new Date(c.time).getTime() / 1000),
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume,
-    }));
+    const aggregated = new Map<number, ChartCandle>();
+
+    for (const c of candles1m) {
+      const timestamp = Math.floor(new Date(c.time).getTime() / 1000);
+
+      if (!aggregated.has(timestamp)) {
+        aggregated.set(timestamp, {
+          time: timestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        });
+      } else {
+        const existing = aggregated.get(timestamp)!;
+        existing.high = Math.max(existing.high, c.high);
+        existing.low = Math.min(existing.low, c.low);
+        existing.close = c.close;
+        existing.volume += c.volume;
+      }
+    }
+
+    // Filter to requested range and return sorted
+    const fromTimestamp = Math.floor(from.getTime() / 1000);
+    const toTimestamp = Math.floor(to.getTime() / 1000);
+
+    return Array.from(aggregated.values())
+      .filter(c => c.time >= fromTimestamp && c.time < toTimestamp)
+      .sort((a, b) => a.time - b.time);
   }
 
   // Aggregate to higher timeframe
@@ -113,8 +176,22 @@ export async function getCandles(
   }
 
   // Filter to requested range and return sorted
+  // Include candles that overlap with the requested time range [from, to]
+  // For a candle at time T with resolution R, it covers [T, T+R)
+  // We include it if it overlaps: T < to AND T+R > from
+  const fromTimestamp = Math.floor(from.getTime() / 1000);
+  const toTimestamp = Math.floor(to.getTime() / 1000);
+
+  // Calculate resolution in seconds
+  let resolutionSeconds: number;
+  if (resolution === 'D') {
+    resolutionSeconds = 24 * 60 * 60;
+  } else {
+    resolutionSeconds = parseInt(resolution) * 60;
+  }
+
   return Array.from(buckets.values())
-    .filter(c => c.time >= Math.floor(from.getTime() / 1000))
+    .filter(c => c.time < toTimestamp && c.time + resolutionSeconds > fromTimestamp)
     .sort((a, b) => a.time - b.time);
 }
 

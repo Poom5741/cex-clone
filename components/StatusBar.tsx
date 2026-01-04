@@ -9,6 +9,7 @@ interface StatusBarProps {
 
 export default function StatusBar({ market }: StatusBarProps) {
   const [dbStatus, setDbStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
+  const [currentTime, setCurrentTime] = useState<string | null>(null);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -17,9 +18,29 @@ export default function StatusBar({ market }: StatusBarProps) {
       setDbStatus(connected ? 'connected' : 'disconnected');
     };
 
+    // Set initial time on client only
+    setCurrentTime(new Date().toLocaleString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }));
+
     checkConnection();
     const interval = setInterval(checkConnection, 5000);
-    return () => clearInterval(interval);
+    const timeInterval = setInterval(() => {
+      setCurrentTime(new Date().toLocaleString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }));
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(timeInterval);
+    };
   }, []);
 
   const statusColor = {
@@ -51,12 +72,7 @@ export default function StatusBar({ market }: StatusBarProps) {
       </div>
 
       <div className="ml-auto font-mono text-xs text-secondary">
-        {new Date().toLocaleString('en-US', {
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })}
+        {currentTime || '--:--:--'}
       </div>
     </div>
   );

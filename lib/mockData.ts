@@ -1,5 +1,8 @@
-import { insertTrade, insertTrades } from './pocketbase';
+import { insertTrade, insertTrades, authenticateAsAdmin } from './pocketbase';
 import type { Trade } from './types';
+
+// Re-export for seed script convenience
+export { authenticateAsAdmin };
 
 interface MarketConfig {
   basePrice: number;
@@ -107,6 +110,8 @@ export async function generateInitialCandles(
   const startTime = now - days * 24 * 60 * 60 * 1000;
 
   const trades: Omit<Trade, 'id' | 'collectionId' | 'collectionName' | 'created' | 'updated'>[] = [];
+  const totalMinutes = days * 24 * 60;
+  let processedMinutes = 0;
 
   for (let t = startTime; t < now; t += 60000) {
     // Generate 5-20 trades per minute
@@ -124,8 +129,16 @@ export async function generateInitialCandles(
         timestamp: new Date(t + Math.random() * 60000).toISOString(),
       });
     }
+
+    // Progress logging every 10%
+    processedMinutes++;
+    if (processedMinutes % Math.floor(totalMinutes / 10) === 0) {
+      const progress = Math.round((processedMinutes / totalMinutes) * 100);
+      console.log(`  Progress: ${progress}% (${processedMinutes}/${totalMinutes} minutes)`);
+    }
   }
 
+  console.log(`  Inserting ${trades.length} trades...`);
   await insertTrades(trades);
-  console.log('Initial candles generated');
+  console.log(`  ✓ Generated ${market} data`);
 }

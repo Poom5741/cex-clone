@@ -1,5 +1,6 @@
 node_modules
 .next
+.env
 .env.local
 .env*.local
 *.log
@@ -7,3 +8,10 @@ node_modules
 .worktrees/
 bin/
 pocketbase/pb
+
+app/resources
+
+
+pocketbase/pb_data/
+backup_db/
+backup_pb/

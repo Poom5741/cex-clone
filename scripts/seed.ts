@@ -1,14 +1,30 @@
-import { generateInitialCandles, startMockTrades } from '../lib/mockData';
+import { authenticateAsAdmin, generateInitialCandles, startMockTrades } from '../lib/mockData';
 
 async function main() {
   console.log('Seeding database with initial data...');
 
-  // Generate 1 day of candles for each market (reduced from 7 for speed)
+  // Authenticate as admin first
+  console.log('Authenticating as PocketBase admin...');
+  const authenticated = await authenticateAsAdmin();
+  if (!authenticated) {
+    console.error('Failed to authenticate. Exiting.');
+    process.exit(1);
+  }
+
+  // Generate 7 days of candles for each market (enough for testing, fast to generate)
   const markets = ['ETHUSDC', 'BTCUSDC', 'SOLUSDC'];
+  const daysToGenerate = 7;
+
+  console.log(`\n===========================================`);
+  console.log(`Generating ${daysToGenerate} days of data`);
+  console.log(`From: ${new Date(Date.now() - daysToGenerate * 24 * 60 * 60 * 1000).toISOString()}`);
+  console.log(`To: ${new Date().toISOString()}`);
+  console.log(`===========================================\n`);
 
   for (const market of markets) {
-    console.log(`\nGenerating data for ${market}...`);
-    await generateInitialCandles(market, 1);
+    console.log(`\n[${market}] Generating data...`);
+    await generateInitialCandles(market, daysToGenerate);
+    console.log(`[${market}] ✓ Complete`);
   }
 
   console.log('\nSeed complete!');

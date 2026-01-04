@@ -8,6 +8,40 @@
 
 Migrate from TimescaleDB (PostgreSQL) to PocketBase for the trading chart POC. Primary motivation is leveraging PocketBase's built-in realtime subscriptions instead of manual WebSocket implementation. Future-proof design for multi-quote trading platform with on-chain traceability.
 
+## Scope & Boundaries
+
+**What This System Does:**
+- Store historical trade data for chart display
+- Aggregate trades into OHLCV candles (1m base + on-demand higher timeframes)
+- Serve chart data to frontend via REST API
+- Push real-time candle updates via PocketBase subscriptions
+- Display charts using TradingView Lightweight Charts
+
+**What This System Does NOT Do:**
+- ❌ Execute trades (trades happen on-chain via DEX/order book)
+- ❌ Ingest blockchain data (separate indexer service writes to PocketBase)
+- ❌ Manage order book (on-chain order book is source of truth)
+- ❌ Handle user trading operations (PocketBase is read-layer only for charts)
+
+**Data Flow:**
+```
+Blockchain (on-chain DEX) 
+    ↓
+[Separate Indexer Service] ← Outside scope of this plan
+    ↓
+PocketBase (chart data storage)
+    ↓
+Next.js API + Realtime
+    ↓
+Frontend (TradingView Charts)
+```
+
+**Note for AI Assistants:**
+- The "mock trades generator" simulates the indexer service for POC testing
+- In production, a separate blockchain indexer will write trades to PocketBase
+- This design focuses solely on the chart data layer, not trade execution
+- PocketBase handles controlled writes from indexer (not concurrent user traffic)
+
 ## Approach: Store-All-Trades + Base-Timeframe-Only
 
 Store every individual trade for on-chain traceability, but only store 1m candles as base. Aggregate other timeframes on-demand in the backend.
