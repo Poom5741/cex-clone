@@ -5,23 +5,54 @@ const pb = new PocketBase(
   process.env.POCKETBASE_URL || 'http://localhost:8090'
 );
 
-// Authenticate as admin for server-side operations (seed script, API routes)
-export async function authenticateAsAdmin(): Promise<boolean> {
-  const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL;
-  const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD;
+// Cached auth state - persists across requests in serverless/long-running contexts
+let isAuthenticated = false;
+let authPromise: Promise<boolean> | null = null;
 
-  if (!adminEmail || !adminPassword) {
-    console.warn('POCKETBASE_ADMIN_EMAIL or POCKETBASE_ADMIN_PASSWORD not set');
-    return false;
+// Authenticate as admin for server-side operations (seed script, API routes)
+// Uses caching to avoid re-authenticating on every request
+export async function authenticateAsAdmin(): Promise<boolean> {
+  // Return cached auth if already authenticated
+  if (isAuthenticated && pb.authStore.token) {
+    return true;
   }
 
-  try {
-    await pb.collection('_superusers').authWithPassword(adminEmail, adminPassword);
-    console.log('✅ Authenticated as PocketBase admin');
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to authenticate as PocketBase admin:', error);
-    return false;
+  // If auth is in progress, wait for it
+  if (authPromise) {
+    return authPromise;
+  }
+
+  // Start auth process
+  authPromise = (async () => {
+    const adminEmail = process.env.POCKETBASE_ADMIN_EMAIL;
+    const adminPassword = process.env.POCKETBASE_ADMIN_PASSWORD;
+
+    if (!adminEmail || !adminPassword) {
+      console.warn('POCKETBASE_ADMIN_EMAIL or POCKETBASE_ADMIN_PASSWORD not set');
+      return false;
+    }
+
+    try {
+      await pb.collection('_superusers').authWithPassword(adminEmail, adminPassword);
+      isAuthenticated = true;
+      console.log('✅ Authenticated as PocketBase admin (cached)');
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to authenticate as PocketBase admin:', error);
+      isAuthenticated = false;
+      authPromise = null;
+      return false;
+    }
+  })();
+
+  return authPromise;
+}
+
+// Ensure authenticated before making queries
+async function ensureAuthenticated(): Promise<void> {
+  const authenticated = await authenticateAsAdmin();
+  if (!authenticated) {
+    throw new Error('Failed to authenticate with PocketBase');
   }
 }
 
@@ -45,6 +76,8 @@ function floorToResolution(date: Date, resolution: Resolution): Date {
 
 // Insert a single trade
 export async function insertTrade(trade: Omit<Trade, 'id' | 'collectionId' | 'collectionName' | 'created' | 'updated'>): Promise<void> {
+  await ensureAuthenticated();
+
   await pb.collection('trades').create({
     market: trade.market,
     price: trade.price,
@@ -71,20 +104,24 @@ export async function getCandles1m(
   direction: 'forward' | 'backward' = 'forward',
   limit?: number
 ): Promise<Candle[]> {
+  // Auto-authenticate before querying
+  await ensureAuthenticated();
+
   const filter = `market = "${market}" && time >= "${from.toISOString()}" && time <= "${to.toISOString()}"`;
   console.log(`[DEBUG getCandles1m] filter: ${filter}, direction: ${direction}, limit: ${limit}`);
 
   // Determine sort order based on direction
   const sortOrder = direction === 'backward' ? '-time' : '+time';
-  const perPage = limit || 10000;
-
-  const result = await pb.collection('candles_1m').getList(1, perPage, {
+  
+  // Use getFullList to ensure we get ALL data in the range
+  // getList with a large page size (e.g. 43200) often gets truncated by the server/proxy defaults
+  const result = await pb.collection('candles_1m').getFullList({
     filter: filter,
     sort: sortOrder,
   });
 
-  console.log(`[DEBUG getCandles1m] returned: ${result.items.length} (filtered), total: ${result.totalItems}`);
-  return result.items as Candle[];
+  console.log(`[DEBUG getCandles1m] returned: ${result.length} (filtered)`);
+  return result as Candle[];
 }
 
 // Aggregate candles from 1m to higher timeframe

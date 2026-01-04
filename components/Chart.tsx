@@ -29,9 +29,9 @@ interface HistoryResponse {
 
 // Configuration constants
 const CONFIG = {
-  initialLoadCandles: 500,
-  historyFetchChunk: 200,
-  scrollThreshold: 100,
+  initialLoadDays: 30,        // Initial days to load (regardless of resolution)
+  preloadChunk: 1000,         // Proactive preload chunk size in 1m candles
+  preloadTrigger: 0.3,        // Trigger preload when 30% of data remaining
 } as const;
 
 export default function Chart({ symbol, resolution }: ChartProps) {
@@ -43,7 +43,7 @@ export default function Chart({ symbol, resolution }: ChartProps) {
   const [candles, setCandles] = useState<Map<number, ChartCandle>>(new Map());
   const [loadedRange, setLoadedRange] = useState<LoadedRange | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isPreloading, setIsPreloading] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
 
   const market = symbol.replace('/', '');
@@ -173,15 +173,15 @@ export default function Chart({ symbol, resolution }: ChartProps) {
 
     try {
       const now = Math.floor(Date.now() / 1000);
-      const resolutionMs = resolution === 'D'
-        ? 24 * 60 * 60 * 1000
-        : parseInt(resolution) * 60 * 1000;
+      const oneDayMs = 24 * 60 * 60 * 1000;
 
-      // Calculate range for initial load (500 candles of requested resolution)
-      const from = now - Math.floor((CONFIG.initialLoadCandles * resolutionMs) / 1000);
+      // Calculate range for initial load - load N days of 1m candles
+      const from = now - Math.floor((CONFIG.initialLoadDays * oneDayMs) / 1000);
       const to = now;
 
-      const candles1m = await fetchHistory(from, to, 'backward', CONFIG.initialLoadCandles);
+      // Calculate how many 1m candles we need
+      const totalMinutes = CONFIG.initialLoadDays * 24 * 60;
+      const candles1m = await fetchHistory(from, to, 'backward', totalMinutes);
       const aggregated = aggregateCandles(candles1m, resolution);
 
       // Update state
@@ -193,13 +193,13 @@ export default function Chart({ symbol, resolution }: ChartProps) {
       // Update chart
       seriesRef.current.setData(aggregated as any);
 
-      // Position chart to show recent data
+      // Position chart to show recent data (right side with padding)
       if (chartRef.current) {
         chartRef.current.timeScale().fitContent();
-        chartRef.current.timeScale().scrollToPosition(0, false);
       }
 
-      setHasMoreHistory(candles1m.length >= CONFIG.initialLoadCandles);
+      // Check if there's more history available
+      setHasMoreHistory(candles1m.length >= totalMinutes);
     } catch (error) {
       console.error('Error loading initial data:', error);
     } finally {
@@ -207,22 +207,18 @@ export default function Chart({ symbol, resolution }: ChartProps) {
     }
   }, [resolution, fetchHistory, aggregateCandles]);
 
-  // Load historical data (infinite scroll)
-  const loadHistory = useCallback(async (rangeFrom: number) => {
-    if (!seriesRef.current || isLoadingHistory || !hasMoreHistory) return;
+  // Load historical data (proactive preloading)
+  const preloadHistoricalData = useCallback(async (rangeFrom: number) => {
+    if (!seriesRef.current || isPreloading || !hasMoreHistory) return;
 
-    setIsLoadingHistory(true);
+    setIsPreloading(true);
 
     try {
-      const resolutionMs = resolution === 'D'
-        ? 24 * 60 * 60 * 1000
-        : parseInt(resolution) * 60 * 1000;
-
-      // Fetch chunk of historical data
-      const from = rangeFrom - Math.floor((CONFIG.historyFetchChunk * resolutionMs) / 1000);
+      // Fetch N minutes of historical data (1m candles)
+      const from = rangeFrom - (CONFIG.preloadChunk * 60); // preloadChunk is in minutes
       const to = rangeFrom;
 
-      const candles1m = await fetchHistory(from, to, 'backward', CONFIG.historyFetchChunk);
+      const candles1m = await fetchHistory(from, to, 'backward', CONFIG.preloadChunk);
       const aggregated = aggregateCandles(candles1m, resolution);
 
       if (aggregated.length === 0) {
@@ -240,16 +236,16 @@ export default function Chart({ symbol, resolution }: ChartProps) {
       setLoadedRange(prev => prev ? { ...prev, from } : null);
 
       // Update chart with all data
-      const allCandles = Array.from(candles.values()).concat(aggregated);
+      const allCandles = Array.from(candles.values());
       seriesRef.current.setData(allCandles as any);
 
-      setHasMoreHistory(candles1m.length >= CONFIG.historyFetchChunk);
+      setHasMoreHistory(candles1m.length >= CONFIG.preloadChunk);
     } catch (error) {
-      console.error('Error loading history:', error);
+      console.error('Error preloading history:', error);
     } finally {
-      setIsLoadingHistory(false);
+      setIsPreloading(false);
     }
-  }, [candles, resolution, fetchHistory, aggregateCandles, isLoadingHistory, hasMoreHistory]);
+  }, [candles, resolution, fetchHistory, aggregateCandles, isPreloading, hasMoreHistory]);
 
   // Setup realtime subscription
   useEffect(() => {
@@ -305,7 +301,7 @@ export default function Chart({ symbol, resolution }: ChartProps) {
         };
       } catch (error) {
         console.error('Error setting up realtime subscription:', error);
-        return () => {};
+        return () => { };
       }
     };
 
@@ -351,6 +347,7 @@ export default function Chart({ symbol, resolution }: ChartProps) {
         borderColor: '#1e293b',
         timeVisible: true,
         secondsVisible: resolution === '1',
+        rightOffset: 5,
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
@@ -386,22 +383,22 @@ export default function Chart({ symbol, resolution }: ChartProps) {
     };
   }, [resolution]);
 
-  // Handle infinite scroll
+  // Handle infinite scroll with proactive preloading
   useEffect(() => {
     if (!chartRef.current || !loadedRange) return;
 
     const handleVisibleRangeChange = (logicalRange: { from: number; to: number } | null) => {
       if (!logicalRange || !loadedRange) return;
 
-      const resolutionMs = resolution === 'D'
-        ? 24 * 60 * 60 * 1000
-        : parseInt(resolution) * 60 * 1000;
+      // Calculate distance from the start of the dataset (index 0)
+      // logicalRange.from is the index of the leftmost visible bar
+      const barsFromLeft = logicalRange.from;
 
-      const thresholdTime = loadedRange.from + (CONFIG.scrollThreshold * resolutionMs) / 1000;
-
-      // Trigger load if within threshold of left edge
-      if (logicalRange.from <= thresholdTime && hasMoreHistory && !isLoadingHistory) {
-        loadHistory(loadedRange.from);
+      // Trigger preload when user is close to the left edge (e.g. within 50 bars)
+      // This works for all resolutions since logical indices are bar-based
+      if (barsFromLeft < 50 && hasMoreHistory && !isPreloading) {
+        console.log('[Proactive] Preloading more historical data...');
+        preloadHistoricalData(loadedRange.from);
       }
     };
 
@@ -415,7 +412,7 @@ export default function Chart({ symbol, resolution }: ChartProps) {
         // Ignore if already unsubscribed
       }
     };
-  }, [loadedRange, resolution, hasMoreHistory, isLoadingHistory, loadHistory]);
+  }, [loadedRange, hasMoreHistory, isPreloading, preloadHistoricalData]);
 
   // Load initial data when chart is ready
   useEffect(() => {
@@ -433,9 +430,9 @@ export default function Chart({ symbol, resolution }: ChartProps) {
 
   return (
     <div className="relative w-full h-[85vh]">
-      {(isLoading || isLoadingHistory) && (
+      {(isLoading || isPreloading) && (
         <div className="absolute top-4 right-4 z-10 bg-gray-900/80 px-3 py-1 rounded text-xs text-gray-400">
-          {isLoadingHistory ? 'Loading history...' : 'Loading...'}
+          {isPreloading ? 'Preloading history...' : 'Loading...'}
         </div>
       )}
       <div ref={chartContainerRef} className="w-full h-full" />
